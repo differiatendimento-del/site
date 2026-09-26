@@ -678,6 +678,11 @@ function card(it){
 }
 
 /* ---------- home ---------- */
+// Capa das vitrines: foto real do imóvel em destaque (ou o mais recente com fotos); sem fotos, usa a foto da praia.
+const comFoto = lista => [...lista].filter(i => !i.semFotos && !i.exemplo && i.fotos[0] && !String(i.fotos[0]).startsWith("data:image/svg"))
+  .sort((a,b) => (b.destaque - a.destaque) || String(b.created).localeCompare(String(a.created)))[0];
+const capaVitrine = (lista, pos) => { const it = comFoto(lista); return it ? it.fotos[0] : (HERO_FOTO || art(3,"torre",2)); };
+const capaPos = (lista, pos) => comFoto(lista) ? "center" : pos;
 let HOME_CID = "João Pessoa";
 function blist(cidade){
   return bairrosDe(cidade).map(b => { const n = ITENS.filter(i => i.bairro === b && i.cidade === cidade).length;
@@ -720,11 +725,11 @@ function pgHome(){
   <section class="sec"><div class="wrap">
     <div class="sec-hd"><div><div class="eyebrow">Duas vitrines</div><h2>Na planta ou pronto para morar</h2></div></div>
     <div class="duo">
-      <a href="#planta"><img src="${art(3,"torre",2)}" alt=""><div class="ov"></div><div class="tx">
+      <a href="#planta"><img src="${capaVitrine(lanc, "30% 60%")}" alt="" style="object-position:${capaPos(lanc, "30% 60%")}"><div class="ov"></div><div class="tx">
         <div class="eyebrow">Lançamentos</div><h3>Na planta</h3>
         <p>Compre com condições de lançamento e acompanhe a obra até a entrega das chaves.</p>
         <div class="chips"><span>${lanc.length} ${plural(lanc.length,"empreendimento","empreendimentos")}</span><span>Construtoras parceiras</span></div></div></a>
-      <a href="#prontos"><img src="${art(44,"torre",1)}" alt=""><div class="ov"></div><div class="tx">
+      <a href="#prontos"><img src="${capaVitrine(ITENS.filter(i => i.fase === "pronto"), "75% 60%")}" alt="" style="object-position:${capaPos(ITENS.filter(i => i.fase === "pronto"), "75% 60%")}"><div class="ov"></div><div class="tx">
         <div class="eyebrow">Captados pela Differi</div><h3>Prontos para morar</h3>
         <p>Apartamentos, casas e flats verificados pela nossa equipe, com fotos e vídeo profissionais.</p>
         <div class="chips"><span>${venda.length} à venda</span><span>${alug.length} para alugar</span></div></div></a>
