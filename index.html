@@ -550,17 +550,19 @@ function fromLanc(l){
   const cb = canon(l.bairro, l.cidade);
   const fotos = (l.fotos && l.fotos.length) ? l.fotos : (l._seed ? [0,1,2,3].map(v => art(l._seed, l._kind, v)) : [semFoto(l.tipo)]);
   return {raw:l, id:l.codigo, fase:"planta", fin:"venda", tipo:tipoCanon(l.tipo), bairro:cb.bairro, cidade:l.cidade || cb.cidade,
-    qmin:num(l.quartos_min), qmax:num(l.quartos_max ?? l.quartos_min), amin:num(l.area_min), amax:num(l.area_max ?? l.area_min),
-    vmin:num(l.preco_min), vmax:num(l.preco_max ?? l.preco_min), suites:l.suites, vagas:l.vagas, entrega:l.entrega, estagio:l.estagio,
+    qmin:num(l.quartos_min ?? l.quartos_max), qmax:num(l.quartos_max ?? l.quartos_min), amin:num(l.area_min ?? l.area_max), amax:num(l.area_max ?? l.area_min),
+    vmin:num(l.preco_min ?? l.preco_max), vmax:num(l.preco_max ?? l.preco_min), construtora:l.construtora, suites:l.suites, vagas:l.vagas, entrega:l.entrega, estagio:l.estagio,
     descricao:l.descricao, diferenciais:l.diferenciais || [], plantas:l.plantas || [], video:l.video, destaque:!!l.destaque,
     exemplo:!!l._seed, fotos, created:l.created_at || ""};
 }
+/* empreendimento de construtora exibido junto com os imóveis à venda (quando a vitrine "na planta" está desligada) */
+function fromEmpreend(l){ return {...fromLanc(l), fase:"pronto", empreend:true}; }
 function fromPronto(p){
   const cb = canon(p.bairro, p.cidade);
   return {raw:p, id:p.codigo, fase:"pronto", fin:p.fin, tipo:tipoCanon(p.tipo), bairro:cb.bairro, cidade:p.cidade || cb.cidade,
     qmin:num(p.quartos), qmax:num(p.quartos), amin:num(p.area), amax:num(p.area), vmin:num(p.valor), vmax:num(p.valor),
     suites:p.suites, vagas:p.vagas, cond:num(p.condominio), iptu:num(p.iptu), mobiliado:p.mobiliado, pet:p.aceita_pet,
-    descricao:p.descricao, video:p.video, destaque:!!p.destaque, fotos:(p.fotos && p.fotos.length) ? p.fotos : [semFoto(p.tipo)], semFotos:!(p.fotos && p.fotos.length), created:p.created_at || ""};
+    descricao:p.descricao, video:p.video, destaque:!!p.destaque, fotos:(p.fotos && p.fotos.length) ? p.fotos : [semFoto(p.tipo)], semFotos:!(p.fotos && p.fotos.length), repasse:p.situacao === "repasse", entrega:p.entrega, fluxo:p.fluxo_pagamento, created:p.created_at || ""};
 }
 function titulo(it){
   if (it.fase === "planta"){
@@ -598,11 +600,11 @@ async function carregar(){
         sb("site_imoveis_publico?select=*&order=destaque.desc,created_at.desc", {signal:ctrl.signal})
       ]);
       MODE = "live";
-      return [...(CONFIG.MOSTRAR_PLANTA ? lanc.map(fromLanc) : []), ...prontos.map(fromPronto)];
+      return [...lanc.map(CONFIG.MOSTRAR_PLANTA ? fromLanc : fromEmpreend), ...prontos.map(fromPronto)];
     } catch (e) { MODE = "demo"; }
   }
   const db = demoDB();
-  return [...(CONFIG.MOSTRAR_PLANTA ? db.lanc.filter(l => l.publicado).map(fromLanc) : []),
+  return [...db.lanc.filter(l => l.publicado).map(CONFIG.MOSTRAR_PLANTA ? fromLanc : fromEmpreend),
           ...db.capt.filter(c => c._publicado !== false).map(fromPronto)];
 }
 const enviarLead = d => MODE === "live" ? sb("rpc/site_novo_lead", {method:"POST", body:JSON.stringify(d)}) : new Promise(r => setTimeout(r, 500));
@@ -662,10 +664,11 @@ function filtrar(f = F){
 
 /* ---------- card ---------- */
 function card(it){
-  const tag = it.fase === "planta" ? `<span class="tag gold">Na planta${it.exemplo ? " · exemplo" : ""}</span>` : `<span class="tag">${it.fin === "aluguel" ? "Aluguel" : "Venda"}</span>`;
+  const tag = it.fase === "planta" ? `<span class="tag gold">Na planta${it.exemplo ? " · exemplo" : ""}</span>` : it.repasse ? `<span class="tag gold">Repasse · em construção</span>` : `<span class="tag">${it.fin === "aluguel" ? "Aluguel" : "Venda"}</span>`;
   let preco;
   if (it.fase === "planta") preco = `<div><small>A partir de</small><br><b>${it.vmin ? curto(it.vmin) : "Consulte"}</b></div>${it.entrega ? `<div class="deliv">Entrega<br><b style="font-size:14px">${esc(it.entrega)}</b></div>` : ""}`;
-  else preco = `<div><small>${it.fin === "aluguel" ? "Aluguel" : "Venda"}</small><br><b>${it.vmin ? brl(it.vmin) : "Consulte"}</b>${it.fin === "aluguel" && it.vmin ? '<small>/mês</small>' : ""}</div>`;
+  else if (it.empreend) preco = `<div><small>${it.vmax && it.vmax !== it.vmin ? "A partir de" : "Venda"}</small><br><b>${it.vmin ? brl(it.vmin) : "Consulte"}</b></div>${it.vagas ? `<div class="deliv">Vagas<br><b style="font-size:14px">${esc(it.vagas)}</b></div>` : ""}`;
+  else preco = `<div><small>${it.fin === "aluguel" ? "Aluguel" : it.repasse ? "Repasse" : "Venda"}</small><br><b>${it.vmin ? brl(it.vmin) : "Consulte"}</b>${it.fin === "aluguel" && it.vmin ? '<small>/mês</small>' : ""}</div>${it.repasse && it.entrega ? `<div class="deliv">Entrega<br><b style="font-size:14px">${esc(it.entrega)}</b></div>` : ""}`;
   const facts = [
     it.qmin ? `<span>${IC.bed}${quartosTxt(it)}</span>` : "",
     it.amin ? `<span>${IC.area}${areaTxt(it)}</span>` : "",
@@ -838,11 +841,15 @@ function pgImovel(id){
   const msg = `Olá! Vi no site o imóvel ${it.id} (${t}) e quero mais informações.`;
   const kvRaw = planta
     ? [["Quartos",quartosTxt(it)],["Suítes",it.suites],["Área privativa",areaTxt(it)],["Vagas",it.vagas],["Entrega",it.entrega],["Estágio da obra",it.estagio]]
-    : [["Quartos",it.qmin],["Suítes",it.suites],["Área",areaTxt(it)],["Vagas",it.vagas],["Condomínio",it.cond ? brl(it.cond) : null],["IPTU",it.iptu ? brl(it.iptu) : null],["Mobiliado",it.mobiliado],["Aceita pet",it.pet]];
+    : it.empreend
+    ? [["Quartos",quartosTxt(it)],["Suítes",it.suites],["Área privativa",areaTxt(it)],["Vagas",it.vagas],["Situação",it.estagio || it.entrega]]
+    : [...(it.repasse ? [["Situação","Em construção"],["Entrega",it.entrega]] : []),["Quartos",it.qmin],["Suítes",it.suites],["Área",areaTxt(it)],["Vagas",it.vagas],["Condomínio",it.cond ? brl(it.cond) : null],["IPTU",it.iptu ? brl(it.iptu) : null],["Mobiliado",it.mobiliado],["Aceita pet",it.pet]];
   const kv = kvRaw.filter(([,v]) => v !== null && v !== undefined && v !== "");
   const precoBox = planta
     ? `<div class="pl">Faixa de preço</div><div class="pv">${it.vmin ? curto(it.vmin) : "Consulte"}${it.vmax && it.vmax !== it.vmin ? ` <span style="font-size:18px;color:var(--muted)">a</span> ${curto(it.vmax)}` : ""}</div><div class="ps">Valores de tabela sujeitos a alteração. Consulte condições de pagamento.</div>`
-    : `<div class="pl">${it.fin === "aluguel" ? "Aluguel" : "Valor de venda"}</div><div class="pv">${it.vmin ? brl(it.vmin) : "Consulte"}${it.fin === "aluguel" && it.vmin ? '<span style="font-size:16px;color:var(--muted)"> /mês</span>' : ""}</div>${it.fin === "aluguel" && it.vmin && (it.cond || it.iptu) ? `<div class="ps">Total com condomínio e IPTU: <b>${brl(it.vmin + (it.cond||0) + (it.iptu||0))}</b></div>` : ""}`;
+    : it.empreend
+    ? `<div class="pl">${it.vmax && it.vmax !== it.vmin ? "Valores a partir de" : "Valor de venda"}</div><div class="pv">${it.vmin ? brl(it.vmin) : "Consulte"}${it.vmax && it.vmax !== it.vmin ? ` <span style="font-size:18px;color:var(--muted)">a</span> ${brl(it.vmax)}` : ""}</div><div class="ps">Valores de tabela, sujeitos a alteração. Consulte condições de pagamento.</div>`
+    : `<div class="pl">${it.fin === "aluguel" ? "Aluguel" : it.repasse ? "Valor do repasse" : "Valor de venda"}</div><div class="pv">${it.vmin ? brl(it.vmin) : "Consulte"}${it.fin === "aluguel" && it.vmin ? '<span style="font-size:16px;color:var(--muted)"> /mês</span>' : ""}</div>${it.fin === "aluguel" && it.vmin && (it.cond || it.iptu) ? `<div class="ps">Total com condomínio e IPTU: <b>${brl(it.vmin + (it.cond||0) + (it.iptu||0))}</b></div>` : ""}`;
   const yt = ytId(it.video);
   const video = !it.video ? "" : (MODE === "live" && yt)
     ? `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${yt}" title="Vídeo do imóvel" allow="accelerometer; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`
@@ -860,13 +867,14 @@ function pgImovel(id){
     ${f.length > 1 ? `<div class="thumbs" id="thumbs">${f.map((u,i) => `<button type="button" data-i="${i}" class="${i ? "" : "on"}" aria-label="Foto ${i+1}"><img src="${esc(u)}" alt=""></button>`).join("")}</div>` : ""}
     <div class="dt">
       <div>
-        <div class="eyebrow">${planta ? "Lançamento na planta" : it.fin === "aluguel" ? "Pronto para alugar" : "Pronto à venda"} · <span class="mono">${esc(it.id)}</span></div>
+        <div class="eyebrow">${planta ? "Lançamento na planta" : it.fin === "aluguel" ? "Pronto para alugar" : it.empreend ? "Empreendimento pronto à venda" : it.repasse ? "Repasse · imóvel em construção" : "Pronto à venda"} · <span class="mono">${esc(it.id)}</span></div>
         <h1 style="margin-top:12px">${esc(t)}</h1>
         <p class="loc">${esc(it.bairro)}, ${esc(it.cidade)} · PB</p>
         ${kv.length ? `<div class="kv">${kv.map(([k,v]) => `<div><small>${k}</small><b>${esc(v)}</b></div>`).join("")}</div>` : ""}
         ${it.descricao ? `<div class="blk"><h2>Sobre o imóvel</h2><p>${esc(it.descricao)}</p></div>` : ""}
+        ${it.fluxo ? `<div class="blk"><h2>Fluxo de pagamento</h2><p>${esc(it.fluxo)}</p><p style="margin-top:10px;font-size:13px;color:var(--muted)">Valores e condições sujeitos a confirmação com a construtora. Fale com um corretor para a simulação completa.</p></div>` : ""}
         ${it.diferenciais?.length ? `<div class="blk"><h2>Diferenciais</h2><ul class="difs">${it.diferenciais.map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}
-        ${planta && it.plantas?.length ? `<div class="blk"><h2>Plantas</h2>
+        ${(planta || it.empreend) && it.plantas?.length ? `<div class="blk"><h2>Plantas</h2>
           <div class="ptabs" id="ptabs">${it.plantas.map((p,i) => `<button type="button" data-i="${i}" class="${i ? "" : "on"}">${esc(p.nome)}${p.area ? ` · ${p.area} m²` : ""}</button>`).join("")}</div><div id="pbox"></div></div>` : ""}
         ${video ? `<div class="blk"><h2>Vídeo</h2>${video}</div>` : ""}
         <div class="blk"><h2>Localização</h2>
@@ -910,7 +918,7 @@ function bindImovel(id){
     err.hidden = true; $("#l-btn").disabled = true; $("#l-btn").textContent = "Enviando…";
     try {
       await enviarLead({p_nome:nome, p_telefone:tel, p_email:$("#l-email").value.trim(), p_mensagem:$("#l-msg").value.trim(),
-        p_codigo:it.id, p_interesse: it.fase === "planta" ? "Compra na planta" : it.fin === "aluguel" ? "Locação" : "Compra"});
+        p_codigo:it.id, p_interesse: it.fase === "planta" ? "Compra na planta" : it.empreend ? "Compra (empreendimento)" : it.fin === "aluguel" ? "Locação" : it.repasse ? "Compra (repasse)" : "Compra"});
       $("#lead").outerHTML = `<div class="ok"><b>Recebemos seu interesse.</b><br>Um corretor da Differi vai falar com você pelo WhatsApp ${esc($("#l-tel").value)}.${MODE === "live" ? "" : "<br><small>Prévia: no site publicado, este contato entra como lead no CRM.</small>"}</div>`;
     } catch (x) { err.textContent = "Não conseguimos enviar agora. Tente de novo ou chame no WhatsApp."; err.hidden = false; $("#l-btn").disabled = false; $("#l-btn").textContent = "Enviar interesse"; }
   };
@@ -1076,7 +1084,7 @@ function pgAdmin(){
     <div id="admBody">${ADM.form ? formHTML() : listaHTML()}</div></div>`;
 }
 function listaHTML(){
-  const tabs = `<div class="atabs"><button data-t="lanc" class="${ADM.tab === "lanc" ? "on" : ""}">Lançamentos na planta (${ADM.lanc.length})</button><button data-t="capt" class="${ADM.tab === "capt" ? "on" : ""}">Captados do CRM (${ADM.capt.length})</button></div>`;
+  const tabs = `<div class="atabs"><button data-t="lanc" class="${ADM.tab === "lanc" ? "on" : ""}">${CONFIG.MOSTRAR_PLANTA ? "Lançamentos na planta" : "Empreendimentos de construtoras"} (${ADM.lanc.length})</button><button data-t="capt" class="${ADM.tab === "capt" ? "on" : ""}">Captados do CRM (${ADM.capt.length})</button></div>`;
   if (ADM.loading) return tabs + `<div class="empty">Carregando…</div>`;
   if (ADM.tab === "lanc"){
     const rows = ADM.lanc.map((l, i) => { const it = fromLanc(l);
@@ -1085,7 +1093,7 @@ function listaHTML(){
         <td>${it.vmin ? curto(it.vmin) : "—"}${it.vmax && it.vmax !== it.vmin ? " a " + curto(it.vmax) : ""}<div class="sub">${esc(l.entrega || "")}</div></td>
         <td>${l.publicado ? '<span class="pill on">No site</span>' : '<span class="pill off">Rascunho</span>'}${l.destaque ? ' <span class="pill auto">Destaque</span>' : ""}</td>
         <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" data-edit-l="${i}">Editar</button> <button class="btn btn-ghost btn-sm" data-pub-l="${i}">${l.publicado ? "Tirar do site" : "Publicar"}</button></td></tr>`; }).join("");
-    return tabs + `<div class="resbar"><span>O nome do empreendimento e a construtora ficam só aqui. No site aparece tipo + bairro.</span><button class="btn btn-gold" id="novoL">Novo lançamento</button></div>
+    return tabs + `<div class="resbar"><span>O nome do empreendimento e a construtora ficam só aqui. No site aparece tipo + bairro${CONFIG.MOSTRAR_PLANTA ? "" : ", junto com os imóveis à venda (Comprar)"}.</span><button class="btn btn-gold" id="novoL">Novo lançamento</button></div>
       ${ADM.lanc.length ? `<div class="tblw"><table class="tbl"><thead><tr><th></th><th>Código</th><th>Aparece no site como</th><th>Preço / entrega</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">Nenhum lançamento cadastrado ainda. Clique em <b>Novo lançamento</b>.</div>`}`;
   }
   const rows = ADM.capt.map((c, i) => { const e = c.extra || {};
@@ -1339,7 +1347,7 @@ async function salvarExtra(d){
   if (AUTH?.demo){
     const db = demoDB(); const c = db.capt.find(x => x.catalogo_id === d.catalogo_id);
     Object.assign(c, {tipo:d.tipo, cidade:d.cidade, bairro:d.bairro || c.bairro, quartos:d.quartos, suites:d.suites, vagas:d.vagas, area:d.area, valor:d.valor ?? c.valor,
-      condominio:d.condominio, iptu:d.iptu, mobiliado:d.mobiliado, aceita_pet:d.aceita_pet, descricao:d.descricao, video:d.video, fotos:d.fotos, destaque:d.destaque, _publicado:d.publicado});
+      condominio:d.condominio, iptu:d.iptu, mobiliado:d.mobiliado, aceita_pet:d.aceita_pet, descricao:d.descricao, video:d.video, situacao:d.situacao, entrega:d.entrega, fluxo_pagamento:d.fluxo_pagamento, fotos:d.fotos, destaque:d.destaque, _publicado:d.publicado});
   } else await api("site_imoveis_extra?on_conflict=catalogo_id", {method:"POST", body:JSON.stringify({...d, updated_at:new Date().toISOString()}), headers:{Prefer:"resolution=merge-duplicates,return=minimal"}});
   await admAtualizar();
 }
